@@ -1,0 +1,1 @@
+ powershell -ExecutionPolicy Bypass -File "D:\code\Tool\cycle_clone_run\script\cycle_clone_folder_run_kill_cleanup.ps1" -N 10 -RunSeconds 60 -RepeatAfterSeconds 15 -SourceExe "D:\code\Tool\cycle_clone_run\source\bin\Debug\net8.0-windows\GtBoosterViewer_Version2.exe" -StartIntervalMs 0 -ExeArgs 'https://git-scm.com/ --nogui'

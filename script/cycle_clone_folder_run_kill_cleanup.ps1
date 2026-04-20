@@ -1,8 +1,10 @@
 param(
-  [Parameter(Mandatory=$true)][ValidateRange(1,9999)][int]$N,
-  [Parameter(Mandatory=$true)][ValidateRange(1,86400)][int]$RunSeconds,
-  [Parameter(Mandatory=$true)][ValidateRange(0,86400)][int]$RepeatAfterSeconds,
-  [Parameter(Mandatory=$true)][string]$SourceExe,
+  [Parameter(Mandatory=$false)][ValidateRange(1,9999)][int]$N,
+  [Parameter(Mandatory=$false)][ValidateRange(1,86400)][int]$RunSeconds,
+  [Parameter(Mandatory=$false)][ValidateRange(0,86400)][int]$RepeatAfterSeconds,
+  [Parameter(Mandatory=$false)][string]$SourceExe,
+  # NEW: delay between starting each exe in milliseconds
+  [Parameter(Mandatory=$false)][ValidateRange(0,600000)][int]$StartIntervalMs = 0,
   # NEW: pass arguments to the exe (string). Example: '--foo bar "C:\a b\c.txt"'
   [Parameter(Mandatory=$false)][string]$ExeArgs = ""
 )
@@ -12,7 +14,48 @@ $ErrorActionPreference = "Stop"
 
 function Pad3([int]$i) { $i.ToString("000") }
 
-$SourceExe = (Resolve-Path -LiteralPath $SourceExe).Path
+function Show-UsageExamples {
+  $scriptPath = $PSCommandPath
+  if ([string]::IsNullOrWhiteSpace($scriptPath)) {
+    $scriptPath = Join-Path (Get-Location).Path "cycle_clone_folder_run_kill_cleanup.ps1"
+  }
+
+  Write-Host ""
+  Write-Host "Usage examples:"
+  Write-Host "1) Basic run (3 instances, run 15s, no repeat delay):"
+  Write-Host ("   powershell -ExecutionPolicy Bypass -File `"{0}`" -N 3 -RunSeconds 15 -RepeatAfterSeconds 0 -SourceExe `"D:\app\MyApp.exe`"" -f $scriptPath)
+  Write-Host ""
+  Write-Host "2) Start each exe with 250ms interval:"
+  Write-Host ("   powershell -ExecutionPolicy Bypass -File `"{0}`" -N 5 -RunSeconds 20 -RepeatAfterSeconds 5 -SourceExe `"D:\app\MyApp.exe`" -StartIntervalMs 250" -f $scriptPath)
+  Write-Host ""
+  Write-Host "3) Pass arguments to exe (quoted as one string):"
+  Write-Host ("   powershell -ExecutionPolicy Bypass -File `"{0}`" -N 2 -RunSeconds 10 -RepeatAfterSeconds 0 -SourceExe `"D:\app\MyApp.exe`" -StartIntervalMs 100 -ExeArgs '--mode test --input `"C:\data file.txt`"'" -f $scriptPath)
+  Write-Host ""
+}
+
+$requiredParams = @("N", "RunSeconds", "RepeatAfterSeconds", "SourceExe")
+$missingParams = @()
+foreach ($rp in $requiredParams) {
+  if (-not $PSBoundParameters.ContainsKey($rp)) {
+    $missingParams += $rp
+  }
+}
+
+if ($missingParams.Count -gt 0) {
+  Write-Host "[ERROR] Missing required parameters: $($missingParams -join ', ')"
+  Show-UsageExamples
+  throw "Required parameters were not provided."
+}
+
+try {
+  $SourceExe = (Resolve-Path -LiteralPath $SourceExe).Path
+}
+catch {
+  Write-Host "[ERROR] SourceExe not found: $SourceExe"
+  Show-UsageExamples
+  throw
+}
+
 $srcDir  = Split-Path -Parent $SourceExe
 $srcBase = [IO.Path]::GetFileNameWithoutExtension($SourceExe)
 $srcExt  = [IO.Path]::GetExtension($SourceExe)
@@ -32,6 +75,7 @@ Write-Host "Instances root: $root"
 Write-Host "Instances     : $N"
 Write-Host "Run seconds   : $RunSeconds"
 Write-Host "Repeat after  : $RepeatAfterSeconds"
+Write-Host "Start interval: $StartIntervalMs ms"
 Write-Host "Exe args      : $ExeArgs"
 Write-Host ("-"*60)
 Write-Host "Press Ctrl+C to stop. Cleanup will run in finally{}."
@@ -102,6 +146,10 @@ try {
       }
 
       $cycleProcesses.Add($p) | Out-Null
+
+      if ($StartIntervalMs -gt 0 -and $i -lt $N) {
+        Start-Sleep -Milliseconds $StartIntervalMs
+      }
     }
 
     $end = (Get-Date).AddSeconds($RunSeconds)
